@@ -32,4 +32,12 @@ func TestElementField(t *testing.T) {
 func TestArrayField(t *testing.T) {
 	sql, _ := Field("school").Size(2).All([]string{"qinghua", "beida"}).ToSQL()
 	t.Logf("%s", sql)
+
+	//Size and All should be invalid
+	sql, _ = Field("school").Size(2).All([]string{"qinghua", "beida"}).ArrayMatch([]string{"wuda", "huake"}).ToSQL()
+	t.Logf("%s", sql)
+
+	//Test ElemMatch
+	sql, _ = Field("age").ElemMatch().Gt(22).Lt(30).EndElemMatch().Size(4).ToSQL()
+	t.Logf("%s", sql)
 }

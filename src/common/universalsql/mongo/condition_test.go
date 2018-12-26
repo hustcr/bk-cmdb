@@ -57,6 +57,7 @@ func TestMgCondition(t *testing.T) {
 	target.And(
 		mongo.Field("").Lt(75).Gte(15),
 		mongo.Field("").In([]string{"red", "green"}),
+		mongo.Field("size-array").ElemMatch().Lte(55).Gte(15).EndElemMatch().Size(5),
 	)
 	sql, _ = target.ToSQL()
 	t.Logf("%s", sql)

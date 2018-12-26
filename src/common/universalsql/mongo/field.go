@@ -20,8 +20,14 @@ import (
 )
 
 type FieldItem struct {
+	Key    string
+	Val    mapstr.MapStr
+	parent *FieldItem
+}
+
+type LastItem struct {
 	Key string
-	Val mapstr.MapStr
+	Val interface{}
 }
 
 func (k *FieldItem) ToSQL() (string, error) {
@@ -29,8 +35,13 @@ func (k *FieldItem) ToSQL() (string, error) {
 	return string(sql), err
 }
 
-func (k *FieldItem) legal() bool {
-	if 0 == len(k.Key) {
+func (l *LastItem) ToSQL() (string, error) {
+	sql, err := json.Marshal(*l)
+	return string(sql), err
+}
+
+func legal(key string) bool {
+	if 0 == len(key) {
 		return false
 	}
 	//TODO:any other illegal case
@@ -41,12 +52,24 @@ func (k *FieldItem) legal() bool {
 func (k *FieldItem) ToMapStr() mapstr.MapStr {
 	rst := mapstr.New()
 
-	if !k.legal() {
+	if !legal(k.Key) {
 		//drop it
 		return rst
 	}
 
 	rst[k.Key] = k.Val
+	return rst
+}
+
+func (l *LastItem) ToMapStr() mapstr.MapStr {
+	rst := mapstr.New()
+
+	if !legal(l.Key) {
+		//drop it
+		return rst
+	}
+
+	rst[l.Key] = l.Val
 	return rst
 }
 
@@ -56,7 +79,7 @@ func (k *FieldItem) ToMapStr() mapstr.MapStr {
 func Field(k string) *FieldItem {
 	//check legality for k in func (k *FieldItem) ToMapStr()
 	//if k is illegal, the field should be throw away
-	return &FieldItem{Key: k, Val: mapstr.New()}
+	return &FieldItem{Key: k, Val: mapstr.New(), parent: nil}
 }
 
 //Eq add an element like { <field> : { $eq: <val> } } for the field
@@ -123,12 +146,43 @@ func (k *FieldItem) Type(val interface{}) *FieldItem {
 //Elements operator end
 //Array operator start
 //All add an element like { <field>: { $all: [ <value1> , <value2> ... ] } } for the field
+//Func All will find array that contains both the elements value1 and value2 and so on,
+// without regard to order or other elements in the array
 func (k *FieldItem) All(val interface{}) *FieldItem {
 	k.Val[universalsql.ALL] = val
 	return k
 }
+
+//ArrayMatch specify equality condition on an array, use the query document { <field>: <value> }
+// where <value> is the exact array to match, including the order of the elements.
+// Special attention is needed here, once the function is called, the field will no longer be able to call
+// other operator functions, and the operator function called before this will be invalid.
+// The corresponding field only retains the result of the call to this function.
+func (k *FieldItem) ArrayMatch(val interface{}) *LastItem {
+	var l LastItem
+	l.Key = k.Key
+	l.Val = val
+	return &l
+}
+
+//ElemMatch specify multiple criteria on the elements of an array such that at least one array element satisfies
+// all the specified criteria
+// Please note that ElemMatch an EndElemMatch must be paired
 func (k *FieldItem) ElemMatch() *FieldItem {
 	//TODO:too complicated
+	elemField := Field(universalsql.ELEMMATCH)
+	k.Val[universalsql.ELEMMATCH] = elemField
+	elemField.parent = k
+	return elemField
+}
+
+//EndElemMatch end the process of generating the array element match query SQL
+// This function will only work after ElemMatch was called, or it will do nothing.
+func (k *FieldItem) EndElemMatch() *FieldItem {
+	if nil != k.parent {
+		k.parent.Val[k.Key] = k.Val
+		return k.parent.EndElemMatch()
+	}
 	return k
 }
 
